@@ -117,6 +117,9 @@ legend { padding: 0 4px; }
 .basic-colors, .custom-colors, .color-grid { display: grid; grid-template-columns: repeat(8, 16px); gap: 5px; margin: 7px 0 12px; }
 .basic-colors button, .custom-colors button, .color-grid button { width: 16px; height: 16px; min-height: 16px; padding: 0; border: 1px solid; border-color: #808080 #fff #fff #808080; box-shadow: inset 1px 1px #333; }
 .basic-colors button.active, .custom-colors button.active, .color-grid button.active { outline: 1px solid #000; outline-offset: 2px; }
+.custom-colors button.saved { box-shadow: 0 0 0 2px #316ac5; }
+.edit-colors-dialog .color-feedback { max-width: 174px; min-height: 4.2em; margin: 9px 0 0; line-height: 1.4; }
+.color-feedback.invalid { color: #9b0c00; }
 .color-advanced { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; width: 210px; }
 .color-advanced canvas { display: block; touch-action: none; cursor: crosshair; border: 1px solid #808080; }
 .color-values { display: grid; grid-template-columns: 50px 1fr; align-items: center; gap: 6px; width: 100%; }
@@ -1377,6 +1380,7 @@ legend { padding: 0 4px; }
         ['#ffffff', '#c0c0c0', '#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ffff80', '#00ff80', '#80ffff', '#8080ff', '#ff0080', '#ff8040']
     ];
     const customColors = Array(16).fill('#ffffff');
+    let nextCustomColorIndex = 0;
     const view = { tools: true, colors: true, status: true, fonts: true, thumbnail: false };
     const page = { paper: 'A4', orientation: 'portrait', top: 19, right: 19, bottom: 19, left: 19, centerH: true, centerV: false, mode: 'fit', scale: 100, across: 1, down: 1 };
     let filename = 'untitled', format = 'png', internalClipboard = null, internalClipboardPreferred = false, documentGeneration = 0;
@@ -1824,12 +1828,21 @@ legend { padding: 0 4px; }
     }
     async function editColors(target = 'fg', slot = null) {
         let hex = slot ? palette[slot.row][slot.column] : editor.getState()[target];
-        let rgb = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)), hsl = rgbToHsl(...rgb), customIndex = 0;
+        let rgb = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)), hsl = rgbToHsl(...rgb), customIndex = nextCustomColorIndex;
         const basics = ['#ff8080','#ffff80','#80ff80','#00ff80','#80ffff','#0080ff','#ff80c0','#ff80ff','#ff0000','#ffff00','#80ff00','#00ff40','#00ffff','#0080c0','#8080c0','#ff00ff','#804040','#ff8040','#00ff00','#008080','#004080','#8080ff','#800040','#ff0080','#800000','#ff8000','#008000','#008040','#0000ff','#0000a0','#800080','#8000ff','#400000','#804000','#004000','#004040','#000080','#000040','#400040','#400080','#000000','#808000','#808040','#808080','#408080','#c0c0c0','#400040','#ffffff'];
         const swatches = (colors, name) => colors.map((color, index) => `<button type="button" class="color-swatch" data-${name}="${index}" aria-label="${name === 'basic' ? 'Basic' : 'Custom'} color ${index + 1}: ${color}" style="background:${color};width:18px;height:16px;border:1px solid #808080"></button>`).join('');
-        const result = await dialog('Edit Colors', `<div class="color-dialog-grid"><div><p>Basic colors:</p><div class="basic-colors">${swatches(basics, 'basic')}</div><p>Custom colors:</p><div class="custom-colors">${swatches(customColors, 'custom')}</div><button type="button" id="defineColors">Define Custom Colors &gt;&gt;</button></div><div class="color-advanced" hidden><div style="display:flex;gap:8px"><canvas id="colorSpectrum" width="180" height="160" aria-label="Hue and saturation" tabindex="0"></canvas><canvas id="colorLuminosity" width="16" height="160" aria-label="Luminosity" tabindex="0"></canvas></div><div class="color-values"><div class="color-preview" id="colorPreview"></div><div>${[['h','Hue',239],['s','Sat',240],['l','Lum',240],['r','Red',255],['g','Green',255],['b','Blue',255]].map(([name,label,max]) => `<label>${label}:<input type="number" name="${name}" min="0" max="${max}" step="1" required aria-label="${label}"></label>`).join('')}</div></div><button type="button" id="addCustom">Add to Custom Colors</button></div></div>`, {
+        const result = await dialog('Edit Colors', `<div class="color-dialog-grid"><div><p>Basic colors:</p><div class="basic-colors">${swatches(basics, 'basic')}</div><p>Custom colors:</p><div class="custom-colors">${swatches(customColors, 'custom')}</div><button type="button" id="defineColors">Define Custom Colors &gt;&gt;</button><p id="colorFeedback" class="color-feedback" role="status" aria-live="polite"></p></div><div class="color-advanced" hidden><div style="display:flex;gap:8px"><canvas id="colorSpectrum" width="180" height="160" aria-label="Hue and saturation" tabindex="0"></canvas><canvas id="colorLuminosity" width="16" height="160" aria-label="Luminosity" tabindex="0"></canvas></div><div class="color-values"><div class="color-preview" id="colorPreview"></div><div>${[['h','Hue',239],['s','Sat',240],['l','Lum',240],['r','Red',255],['g','Green',255],['b','Blue',255]].map(([name,label,max]) => `<label>${label}:<input type="number" name="${name}" min="0" max="${max}" step="1" required aria-label="${label}"></label>`).join('')}</div></div><button type="button" id="addCustom">Add to Custom Colors</button></div></div>`, {
             className: 'edit-colors-dialog',
             setup: form => {
+                const feedback = form.querySelector('#colorFeedback');
+                const setFeedback = (message, invalid = false) => {
+                    feedback.classList.toggle('invalid', invalid);
+                    if (feedback.textContent !== message) feedback.textContent = message;
+                };
+                form.addEventListener('invalid', () => {
+                    const input = form.querySelector('.color-values input:invalid');
+                    if (input) setFeedback(`${input.getAttribute('aria-label')} must be a whole number from ${input.min} to ${input.max}.`, true);
+                }, true);
                 const update = () => {
                     hex = '#' + rgb.map(value => value.toString(16).padStart(2, '0')).join('');
                     $('colorPreview').style.backgroundColor = hex;
@@ -1844,6 +1857,7 @@ legend { padding: 0 4px; }
                     const x = hsl[0] / 360 * 180, y = (1 - hsl[1] / 100) * 160;
                     spectrum.strokeStyle = '#fff'; spectrum.lineWidth = 3; spectrum.strokeRect(x - 3, y - 3, 6, 6); spectrum.strokeStyle = '#000'; spectrum.lineWidth = 1; spectrum.strokeRect(x - 3, y - 3, 6, 6);
                     const lum = $('colorLuminosity').getContext('2d'), gradient = lum.createLinearGradient(0, 0, 0, 160); gradient.addColorStop(0, '#fff'); gradient.addColorStop(.5, `hsl(${hsl[0]} ${hsl[1]}% 50%)`); gradient.addColorStop(1, '#000'); lum.fillStyle = gradient; lum.fillRect(0, 0, 16, 160); lum.strokeStyle = hsl[2] > 50 ? '#000' : '#fff'; lum.strokeRect(.5, (1 - hsl[2] / 100) * 159, 15, 1);
+                    setFeedback(hsl[2] === 0 ? 'Lum 0 selects black. Add saves it; OK applies it.' : 'Add saves this color. OK applies it.');
                 };
                 const select = color => { rgb = [1,3,5].map(index => parseInt(color.slice(index,index+2),16)); hsl = rgbToHsl(...rgb); update(); };
                 const markCustomSlot = index => {
@@ -1856,14 +1870,27 @@ legend { padding: 0 4px; }
                 };
                 form.querySelectorAll('[data-basic]').forEach(button => button.addEventListener('click', () => select(basics[Number(button.dataset.basic)])));
                 form.querySelectorAll('[data-custom]').forEach(button => button.addEventListener('click', () => { markCustomSlot(Number(button.dataset.custom)); select(customColors[customIndex]); }));
-                $('defineColors').addEventListener('click', () => { form.querySelector('.color-advanced').hidden = false; $('defineColors').disabled = true; });
+                $('defineColors').addEventListener('click', () => {
+                    form.querySelector('.color-advanced').hidden = false;
+                    $('defineColors').disabled = true;
+                    if (hsl[2] === 0 || hsl[2] === 100) {
+                        hsl[2] = 50;
+                        rgb = hslToRgb(...hsl);
+                        update();
+                    }
+                });
                 $('addCustom').addEventListener('click', () => {
                     if (!form.reportValidity()) return;
-                    customColors[customIndex] = hex;
-                    const button = form.querySelector(`[data-custom="${customIndex}"]`);
+                    const savedIndex = customIndex;
+                    customColors[savedIndex] = hex;
+                    const button = form.querySelector(`[data-custom="${savedIndex}"]`);
                     button.style.backgroundColor = hex;
-                    button.setAttribute('aria-label', `Custom color ${customIndex + 1}: ${hex}`);
-                    markCustomSlot((customIndex + 1) % customColors.length);
+                    button.setAttribute('aria-label', `Custom color ${savedIndex + 1}: ${hex}`);
+                    form.querySelectorAll('[data-custom]').forEach(swatch => swatch.classList.remove('saved'));
+                    button.classList.add('saved');
+                    nextCustomColorIndex = (savedIndex + 1) % customColors.length;
+                    markCustomSlot(nextCustomColorIndex);
+                    setFeedback(`Saved ${hex.toUpperCase()} in Custom color ${savedIndex + 1}. Click OK to use it.`);
                 });
                 for (const name of ['r','g','b','h','s','l']) form.elements[name].addEventListener('input', () => {
                     const group = ['r','g','b'].includes(name) ? ['r','g','b'] : ['h','s','l'];
@@ -1945,7 +1972,7 @@ legend { padding: 0 4px; }
             'Lines and shapes':'Drag to draw lines, rectangles, ellipses, or rounded rectangles. Hold Shift to constrain proportions and line angles. Select outline, outline with background fill, or solid foreground fill in the tool options. For a curve, draw the line, then drag twice to bend it. For a polygon, drag the first edge, click more corners, then click the first corner, double-click, or press Enter to finish. Escape cancels an unfinished shape.',
             'Selections':'Drag a rectangle or free-form outline to select pixels. Drag inside to move; drag one of eight handles to resize. Arrow keys move one pixel, Shift+arrows move ten. Shift-drag leaves a copy behind. Transparent selection hides pixels that match the current background color. Delete clears with the background color. Escape cancels an uncommitted move. Use Image > Crop to crop to the selection.',
             'Text':'Select Text, drag a box, and type. Drag its border to move it, or use its eight handles to resize while editing. The floating Fonts toolbar changes font, size, bold, italic, and underline. Tool options choose an opaque or transparent background. Click outside or press Ctrl+Enter to finish. Escape cancels. Once committed, text becomes pixels, as in classic Paint.',
-            'Colors and zoom':'Left-click a palette color for the foreground; right-click for the background. Double-click a swatch to edit it, or click either overlapping color box. Edit Colors accepts whole-number RGB values from 0–255, Hue from 0–239, and Sat/Lum from 0–240. The spectrum changes hue and saturation without changing luminosity: Lum 0 is black and Lum 240 is white. Add to Custom Colors saves into the outlined slot and advances to the next slot; click a slot to choose a replacement destination. The 16 custom slots survive Cancel and New/Open, but reset when this page is refreshed. Cancel does not apply the pending foreground/background choice. The magnifier and View > Zoom change magnification without changing image pixels. The grid is available at 400% or higher. Show Thumbnail displays an overview.',
+            'Colors and zoom':'Left-click a palette color for the foreground; right-click for the background. Double-click a swatch to edit it, or click either overlapping color box. Edit Colors accepts whole-number RGB values from 0–255, Hue from 0–239, and Sat/Lum from 0–240. Expanding Define Custom Colors from black or white starts a draft at Lum 120 so the spectrum can produce visible hues immediately; other existing colors retain their luminosity. You can still explicitly choose Lum 0 for black or Lum 240 for white. The spectrum changes hue and saturation without changing the chosen luminosity. Add to Custom Colors saves a swatch in this dialog, highlights the saved slot in blue, and confirms its color and slot number. The outlined next destination is remembered when you reopen the dialog; click a slot to choose a replacement destination. Click OK to use the chosen color for drawing. Invalid fields show an inline explanation. The 16 custom slots survive Cancel and New/Open, but reset when this page is refreshed. Cancel does not apply the pending foreground/background choice. The magnifier and View > Zoom change magnification without changing image pixels. The grid is available at 400% or higher. Show Thumbnail displays an overview.',
             'Files and printing':'Open or drop an image to replace the document; Shift-drop pastes it. Save As downloads PNG, JPEG, or 24-bit BMP. Edit > Copy To saves the selection; Paste From loads an image into a movable selection. Browser permissions govern the system clipboard; the internal clipboard works within Paint. Page Setup, Print Preview, and Print use your browser printer. This single HTML file works offline. Desktop wallpaper, scanners, and email integration require operating-system access and are unavailable here.',
             'Keyboard shortcuts':'Ctrl (or ⌘ on Mac): N New, O Open, S Save, Shift+S Save As, Z Undo, Y / Shift+Z Redo, X Cut, C Copy, V Paste, A Select All, R Flip/Rotate, W Stretch/Skew, I Invert, E Attributes, Shift+X Crop, Shift+N Clear Image, P Print, G Grid, T Tool Box, L Color Box, F View Bitmap. Ctrl+PgUp 100%, Ctrl+PgDn 400%. Delete clears a selection. F1 opens Help. Alt+F/E/V/I/C/H opens the corresponding menu. Escape closes a menu or cancels an unfinished operation.',
             'Browser limits':'Images are limited to 8,192 pixels per side and 16,777,216 pixels total. Undo stores up to 40 steps within a 64 MiB history budget, retaining at least one step. Save downloads a new file; it does not overwrite an opened file. System clipboard access depends on browser permission; copying and pasting within Paint also works without it. Browser-reserved shortcuts may take precedence. Window controls operate within this page. Fonts and curve antialiasing follow the browser rather than Windows GDI.'
